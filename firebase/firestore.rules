@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// Stricter than the master spec: denies ALL direct client writes, not
+// just to the append-only ledger collections. Every write in this app
+// goes through the Firebase Admin SDK on the backend (see
+// backend/src/config/firebaseAdmin.js) — the client only ever reads.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(merchantId) {
+      return isSignedIn() && request.auth.uid == merchantId;
+    }
+
+    // Admin sessions are issued out-of-band by the Express backend
+    // (signed JWT, verified server-side) and never carry a Firebase
+    // Auth session — there is no client-side admin bypass here.
+    // Admin-elevated reads/writes happen exclusively via the Admin SDK,
+    // which is not subject to these rules.
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    match /merchants/{merchantId} {
+      allow read: if isOwner(merchantId);
+      allow write: if false;
+    }
+
+    // Mutated in place, but only via server-side Admin SDK writes
+    // (DATABASE_SCHEMA.md). Deny all direct client writes.
+    match /merchant_balances/{merchantId} {
+      allow read: if isOwner(merchantId);
+      allow write: if false;
+    }
+
+    // Append-only: block update/delete entirely. The sole permitted
+    // field mutation (status transitions on CAPTURED -> REFUNDED/DISPUTED)
+    // still happens through the Admin SDK server-side, not via a client
+    // rule exception, so client create/update/delete all stay denied.
+    match /transactions/{transactionId} {
+      allow read: if isSignedIn() && resource.data.merchantId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    match /reserve_vault/{vaultId} {
+      allow read: if isSignedIn() && resource.data.merchantId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    match /system_audit_logs/{logId} {
+      allow read: if false;
+      allow create, update, delete: if false;
+    }
+
+    match /tickets/{ticketId} {
+      allow read: if isSignedIn() && resource.data.merchantId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && resource.data.merchantId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /system_configuration/{docId} {
+      allow read: if false;
+      allow write: if false;
+    }
+  }
+}
