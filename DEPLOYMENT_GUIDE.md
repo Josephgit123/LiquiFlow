@@ -12,7 +12,7 @@
 ## Prerequisites
 
 - Firebase project with Authentication (Email/Password + Google provider) and Firestore enabled.
-- Google Generative AI API key with access to `gemini-pro`.
+- Google Generative AI API key with access to `gemini-1.5-flash` (or another current Gemini model — set via `GEMINI_MODEL`). Optional: the AI Copilot degrades to a 503 with an explanatory message if this is unset, everything else in the app works without it.
 - Vercel account (client) and Render/Heroku account (server).
 
 ## Environment Variables
@@ -26,8 +26,11 @@ PORT=4000
 NODE_ENV=production
 CORS_ORIGIN=https://your-client-domain.vercel.app
 
-# Firebase Admin SDK
-FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
+# Firebase Admin SDK — client_email + private_key from a downloaded
+# service-account JSON (Firebase Console > Project Settings > Service
+# Accounts > Generate new private key). There is no service-account
+# *file path* variable — firebaseAdmin.js builds credentials from these
+# three values directly.
 FIREBASE_PROJECT_ID=
 FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY=
@@ -45,7 +48,7 @@ JWT_EXPIRES_IN=12h
 
 # AI Copilot
 GOOGLE_GENERATIVE_AI_API_KEY=
-GEMINI_MODEL=gemini-pro
+GEMINI_MODEL=gemini-1.5-flash
 
 # Reserve engine default
 DEFAULT_VAULT_MATURITY_DAYS=3
@@ -65,11 +68,21 @@ Note the API base URL has no `/v1` segment — the real backend mounts routes di
 
 ## Firestore Setup
 
-1. Create the collections referenced in `DATABASE_SCHEMA.md`: `users`, `merchants`, `merchant_balances`, `transactions`, `reserve_vault`, `tickets`, `notifications`, `system_configuration`, `system_audit_logs`.
-2. Deploy security rules from `docs/FIRESTORE_SECURITY.json`, which must enforce:
-   - Tenant isolation (a merchant can only read/write documents tied to their own `merchantId`).
-   - Append-only protection on `transactions`, `reserve_vault`, and `system_audit_logs` (block `update`/`delete` at the rules layer, not just in application code).
-3. Add composite indexes as needed for the filtered queries used by `/merchant/transactions` (date range + status + risk score) and the reserve maturity scheduler (`isMatured` + `releaseDate`).
+Collections are created implicitly on first write (via the backend's Admin SDK) — there is no separate "create the collection" step. What does need an explicit step is deploying the two files in `firebase/`, which are the real, already-implemented rules and indexes for this project (there is no separate `docs/FIRESTORE_SECURITY.json` — that was an early-spec placeholder name that never matched the actual repo layout):
+
+- **`firebase/firestore.rules`** — denies ALL direct client writes (stricter than tenant-isolation-only: every mutation goes through the Express backend's Admin SDK, which bypasses these rules entirely). Enforces per-merchant read isolation on `users`, `merchants`, `merchant_balances`, `transactions`, `reserve_vault`, and `tickets`.
+- **`firebase/firestore.indexes.json`** — composite indexes for the filtered/sorted queries the app actually issues (transaction history by merchant + timestamp, reserve capsule maturity sweeps, ticket threads, merchant directory filters). A missing index here doesn't fail silently — Firestore returns `FAILED_PRECONDITION` with a console link to auto-create the specific index, visible directly in the browser console/network tab when it happens.
+
+Deploy both with the Firebase CLI from the `firebase/` directory:
+
+```bash
+npm install -g firebase-tools   # if not already installed
+firebase login
+cd firebase
+firebase deploy --only firestore:rules,firestore:indexes --project <your-firebase-project-id>
+```
+
+Composite index builds can take several minutes on a live project — re-check the Firestore console's Indexes tab if a query still 500s right after deploying.
 
 ## Backend Deployment (Render/Heroku)
 
@@ -90,4 +103,6 @@ Note the API base URL has no `/v1` segment — the real backend mounts routes di
 
 - [ ] Merchant registration and login flow works end to end against production Firebase Auth.
 - [ ] Google OAuth callback redirect URI matches the deployed domain in Firebase console settings.
-- [ ] Admin login works and admin credentials are not present anywhere in client-side bundles or
+- [ ] Admin login works and admin credentials are not present anywhere in client-side bundles or logs — `ROOT_ADMIN_ACCESS_ID`/`ROOT_ADMIN_ACCESS_TOKEN` live only in the server's environment config.
+- [ ] `firebase deploy --only firestore:rules,firestore:indexes` has been run against the production project — a fresh Firestore database does not pick these up automatically, and the app will otherwise fail with permission-denied reads or `FAILED_PRECONDITION` index errors.
+- [ ] AI Copilot responds with real answers (not the 503 "not configured" message) if `GOOGLE_GENERATIVE_AI_API_KEY` is meant to be live in this environment.
