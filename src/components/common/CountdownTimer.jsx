@@ -15,6 +15,20 @@ function formatRemaining(ms) {
   return `${days}d ${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
 }
 
+// Screen readers spell "3d 04h" as literal letters, not "days/hours" — a
+// separate full-word label, used as aria-label rather than the visible
+// abbreviated text.
+function formatRemainingLong(ms) {
+  if (ms <= 0) return 'Matured';
+  const totalSeconds = Math.floor(ms / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (days > 0) return `${days} day${days === 1 ? '' : 's'}, ${hours} hour${hours === 1 ? '' : 's'} remaining`;
+  if (hours > 0) return `${hours} hour${hours === 1 ? '' : 's'}, ${minutes} minute${minutes === 1 ? '' : 's'} remaining`;
+  return `${minutes} minute${minutes === 1 ? '' : 's'} remaining`;
+}
+
 /**
  * Built from absolute epoch-ms timestamps ONLY (CLAUDE.md invariant #8) —
  * `releaseDate` is the capsule's absolute maturity boundary. Every tick
@@ -32,10 +46,17 @@ export default function CountdownTimer({ releaseDate, createdAt, size = 96, clas
   const releaseMs = toEpochMs(releaseDate);
   const [now, setNow] = useState(() => Date.now());
 
+  const remainingMsForEffect = releaseMs - now;
   useEffect(() => {
+    // Stops ticking once matured — an already-released capsule has no
+    // reason to keep re-rendering every second forever (this component is
+    // mounted once per capsule in a grid, so an idle interval per matured
+    // capsule adds up).
+    if (remainingMsForEffect <= 0) return undefined;
     const interval = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => clearInterval(interval);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingMsForEffect <= 0]);
 
   const remainingMs = releaseMs - now;
   const isMatured = remainingMs <= 0;
@@ -46,6 +67,7 @@ export default function CountdownTimer({ releaseDate, createdAt, size = 96, clas
       <span
         className={`tabular-nums text-sm font-medium ${className}`}
         style={{ color: tickColor }}
+        aria-label={formatRemainingLong(remainingMs)}
       >
         {formatRemaining(remainingMs)}
       </span>
@@ -64,15 +86,17 @@ export default function CountdownTimer({ releaseDate, createdAt, size = 96, clas
     <div
       className={`relative inline-flex items-center justify-center ${className}`}
       style={{ width: size, height: size }}
+      role="img"
+      aria-label={formatRemainingLong(remainingMs)}
     >
-      <svg width={size} height={size} className="-rotate-90">
+      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
           fill="none"
           strokeWidth="6"
-          className="stroke-black/10 dark:stroke-white/10"
+          className="stroke-border-token-light dark:stroke-border-token-dark"
         />
         <motion.circle
           cx={size / 2}
@@ -88,7 +112,7 @@ export default function CountdownTimer({ releaseDate, createdAt, size = 96, clas
           transition={{ duration: 0.6, ease: 'easeOut' }}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center" aria-hidden="true">
         <span className="text-xs font-semibold tabular-nums" style={{ color: tickColor }}>
           {isMatured ? 'Matured' : formatRemaining(remainingMs)}
         </span>

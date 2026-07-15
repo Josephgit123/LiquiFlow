@@ -18,6 +18,30 @@ import { motion, AnimatePresence } from 'framer-motion';
  *
  * columns: [{ key, label, render?: (row) => node, sortable?: boolean, align?: 'left'|'right' }]
  */
+function defaultRowKey(row, index) {
+  return (
+    row.id ?? row.transactionId ?? row.ticketId ?? row.merchantId ?? row.logId ?? row.notificationId ??
+    // Falls back to the row's own content rather than its array index —
+    // an index-based key breaks after a client-side sort reorders rows,
+    // since AnimatePresence then associates the wrong exit/enter motion
+    // with whatever row now occupies a given position.
+    JSON.stringify(row) ??
+    index
+  );
+}
+
+// Null-safe, type-aware compare — the previous version returned `-1` for
+// ANY undefined/mixed-type pair (since `av > bv` and `av < bv` are both
+// false when either is undefined), silently mis-sorting nullable or
+// string-numeric columns. Nulls always sort last, regardless of direction.
+function compareValues(av, bv) {
+  if (av == null && bv == null) return 0;
+  if (av == null) return 1;
+  if (bv == null) return -1;
+  if (typeof av === 'number' && typeof bv === 'number') return av - bv;
+  return String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' });
+}
+
 export default function DataTable({
   columns,
   rows,
@@ -27,7 +51,7 @@ export default function DataTable({
   offset,
   hasMore,
   onPageChange,
-  getRowKey = (row, index) => row.id ?? row.transactionId ?? row.ticketId ?? row.merchantId ?? row.logId ?? row.notificationId ?? index,
+  getRowKey = defaultRowKey,
 }) {
   const [sort, setSort] = useState({ key: null, direction: 'asc' });
 
@@ -35,10 +59,7 @@ export default function DataTable({
     if (!sort.key) return rows;
     const copy = [...rows];
     copy.sort((a, b) => {
-      const av = a[sort.key];
-      const bv = b[sort.key];
-      if (av === bv) return 0;
-      const result = av > bv ? 1 : -1;
+      const result = compareValues(a[sort.key], b[sort.key]);
       return sort.direction === 'asc' ? result : -result;
     });
     return copy;
@@ -52,6 +73,10 @@ export default function DataTable({
   }
 
   const showPagination = typeof onPageChange === 'function' && limit != null && offset != null;
+  // Sized off `limit` (capped to a sane range) instead of always exactly
+  // 5 — a skeleton for a 20-per-page table shouldn't visibly shrink when
+  // real rows land.
+  const skeletonCount = Math.min(Math.max(limit || 5, 3), 10);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-black/10 dark:border-white/10">
@@ -63,13 +88,29 @@ export default function DataTable({
                 <th
                   key={col.key}
                   scope="col"
-                  className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-ink-secondary-light dark:text-ink-secondary-dark ${
+                  aria-sort={
+                    col.sortable && sort.key === col.key
+                      ? sort.direction === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : undefined
+                  }
+                  className={`text-xs font-semibold uppercase tracking-wide text-ink-secondary-light dark:text-ink-secondary-dark ${
                     col.align === 'right' ? 'text-right' : 'text-left'
-                  } ${col.sortable ? 'cursor-pointer select-none' : ''}`}
-                  onClick={col.sortable ? () => toggleSort(col.key) : undefined}
+                  } ${col.sortable ? '' : 'px-4 py-3'}`}
                 >
-                  {col.label}
-                  {col.sortable && sort.key === col.key ? (sort.direction === 'asc' ? ' ▲' : ' ▼') : null}
+                  {col.sortable ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(col.key)}
+                      className="flex w-full items-center gap-1 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-liquid/50 focus-visible:ring-inset"
+                    >
+                      {col.label}
+                      {sort.key === col.key && <span aria-hidden="true">{sort.direction === 'asc' ? '▲' : '▼'}</span>}
+                    </button>
+                  ) : (
+                    col.label
+                  )}
                 </th>
               ))}
             </tr>
@@ -77,7 +118,7 @@ export default function DataTable({
           <tbody>
             <AnimatePresence initial={false}>
               {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
+                Array.from({ length: skeletonCount }).map((_, i) => (
                   <tr key={`skeleton-${i}`} className="border-t border-black/5 dark:border-white/5">
                     {columns.map((col) => (
                       <td key={col.key} className="px-4 py-3">
@@ -102,7 +143,7 @@ export default function DataTable({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.2 }}
-                    className="border-t border-black/5 hover:bg-black/[0.02] dark:border-white/5 dark:hover:bg-white/[0.02]"
+                    className="border-t border-black/5 transition-colors hover:bg-accent-liquid/[0.04] dark:border-white/5 dark:hover:bg-accent-liquid/[0.06]"
                   >
                     {columns.map((col) => (
                       <td
@@ -123,22 +164,22 @@ export default function DataTable({
       {showPagination && (
         <div className="flex items-center justify-between border-t border-black/10 px-4 py-3 text-sm dark:border-white/10">
           <span className="text-ink-muted-light dark:text-ink-muted-dark">
-            Showing {rows.length === 0 ? 0 : offset + 1}–{offset + rows.length}
+            {rows.length === 0 ? 'Showing 0–0' : `Showing ${offset + 1}–${offset + rows.length}`}
           </span>
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={offset === 0}
+              disabled={offset === 0 || loading}
               onClick={() => onPageChange(Math.max(0, offset - limit))}
-              className="rounded-lg border border-black/10 px-3 py-1.5 disabled:opacity-40 dark:border-white/10"
+              className="rounded-lg border border-black/10 px-3 py-1.5 transition disabled:opacity-40 dark:border-white/10"
             >
               Previous
             </button>
             <button
               type="button"
-              disabled={!hasMore}
+              disabled={!hasMore || loading}
               onClick={() => onPageChange(offset + limit)}
-              className="rounded-lg border border-black/10 px-3 py-1.5 disabled:opacity-40 dark:border-white/10"
+              className="rounded-lg border border-black/10 px-3 py-1.5 transition disabled:opacity-40 dark:border-white/10"
             >
               Next
             </button>

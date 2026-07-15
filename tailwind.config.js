@@ -50,15 +50,23 @@ export default {
         ink: {
           'primary-light': '#0F172A', // Slate 900
           'secondary-light': '#475569', // Slate 600
-          'muted-light': '#94A3B8', // Slate 400
+          'muted-light': '#64748B', // Slate 500 — was Slate 400 (#94A3B8), failed WCAG AA
           'primary-dark': '#FAFAFA', // Zinc 50
           'secondary-dark': '#A1A1AA', // Zinc 400
-          'muted-dark': '#71717A', // Zinc 500
+          'muted-dark': '#86868F', // was Zinc 500 (#71717A), just under WCAG AA
         },
         accent: {
           reserve: '#F59E0B', // Amber 500
           liquid: '#06B6D4', // Cyan 500
           alert: '#EF4444', // Red 500
+        },
+        // 700-weight text-on-light-tint shades — see tokens.js
+        // `accentTextOnLight` for the full rationale. Only used in light
+        // mode (StatusBadge); dark mode keeps the raw `accent-*` classes.
+        'accent-onlight': {
+          reserve: '#B45309', // Amber 700
+          liquid: '#0E7490', // Cyan 700
+          alert: '#B91C1C', // Red 700
         },
       },
       // Tailwind's default rounded-2xl is already exactly 1rem (16px) —

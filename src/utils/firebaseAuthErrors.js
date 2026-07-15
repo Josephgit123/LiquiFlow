@@ -10,6 +10,8 @@ const MESSAGES = {
   'auth/email-already-in-use': 'An account with that email already exists.',
   'auth/weak-password': 'That password does not meet the minimum security requirements.',
   'auth/popup-closed-by-user': 'Google sign-in was cancelled.',
+  'auth/popup-blocked': 'Your browser blocked the Google sign-in popup — allow popups for this site and try again.',
+  'auth/cancelled-popup-request': 'Google sign-in was cancelled.',
   'auth/network-request-failed': 'Network error — check your connection and try again.',
   'auth/too-many-requests': 'Too many attempts — please wait a moment and try again.',
 };

@@ -37,7 +37,7 @@ LiquiFlow is a post-authorization treasury middleware. It does not process cards
 ## Codebase Map
 
 - `src/` (repo root) — React/Vite frontend. Merchant and admin views live under `src/pages/merchant` and `src/pages/admin`; shared primitives live in `src/components/common`; `src/routes/navConfig.js` is the single source of truth for both the sidebar and the router — keep them in sync by editing that file, not by hand-adding routes elsewhere.
-- `backend/` — Express API. Business logic (risk scoring, reserve engine, settlement) belongs in `backend/src/services` (currently empty — this is where the real implementation work is needed), not in route handlers. Route handlers in `backend/src/routes` should stay thin: validate input, call a service, return a response.
+- `backend/` — Express API. Business logic (risk scoring, reserve engine, settlement, refunds/chargebacks, vault scheduling, admin analytics, AI copilot) lives in `backend/src/services` — implemented, with a matching `*.test.js` per service; see `backend/src/services/README.md` for the full inventory. Route handlers in `backend/src/routes` stay thin: validate input, call a service, return a response.
 - `frontend/` — empty leftover directory from an earlier scaffold attempt. Not used by the running app; safe to remove once confirmed unreferenced.
 - `firebase/firestore.rules` — the real, already-implemented security rules (stricter than the spec: denies all client writes, not just to ledger collections).
 - See `PROJECT_STRUCTURE.md` for the complete tree and a full list of divergences from the spec.

@@ -34,17 +34,38 @@ export const tokens = {
   text: {
     primaryDark: '#FAFAFA', // Zinc 50
     secondaryDark: '#A1A1AA', // Zinc 400
-    mutedDark: '#71717A', // Zinc 500
+    // Darkened from Zinc 500 (#71717A) — validated at ~4.29:1 on canvas
+    // dark, just under WCAG AA's 4.5:1 normal-text floor (Groups 1-5 audit).
+    mutedDark: '#86868F', // ~4.29:1 -> ~5.5:1 on canvas dark
     primaryLight: '#0F172A', // Slate 900
     secondaryLight: '#475569', // Slate 600
-    mutedLight: '#94A3B8', // Slate 400
+    // Darkened from Slate 400 (#94A3B8) — validated at ~2.56:1 on white,
+    // failing AA even at the 3:1 large-text floor despite being used for
+    // normal-size captions/labels everywhere (DetailRow, DataTable, page
+    // subtitles). Slate 500 passes at ~4.76:1.
+    mutedLight: '#64748B', // Slate 500
   },
 
-  // The three spec'd accents — the ONLY accent hues in this system.
+  // The three spec'd accents — the ONLY accent hues in this system. Do not
+  // change these anchor values; they're exact per Master Specification
+  // Section 19. Contrast fixes for small text belong in the derived
+  // tokens below, not here.
   accent: {
     reserve: '#F59E0B', // Amber 500 — locked/reserve funds, vault countdowns, pending states
     liquid: '#06B6D4', // Cyan 500 — available/liquid funds, success states
     alert: '#EF4444', // Red 500 — disputes, chargebacks, suspensions, destructive actions, negative balances
+  },
+
+  // Same-hue-family (700-weight) shades for rendering an accent as small
+  // TEXT against a light/near-white tint (StatusBadge's 15%-opacity chip
+  // background) — the raw accent-500 anchors validate at only ~2.1-3.1:1
+  // as text at this size on light surfaces, failing AA. Dark mode keeps
+  // using the raw accent-500 anchor (already validated passing against
+  // dark surfaces) — this set exists ONLY for the light-mode case.
+  accentTextOnLight: {
+    reserve: '#B45309', // Amber 700
+    liquid: '#0E7490', // Cyan 700
+    alert: '#B91C1C', // Red 700
   },
 };
 

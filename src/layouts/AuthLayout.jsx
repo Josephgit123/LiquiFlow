@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import ThemeToggle from '../components/common/ThemeToggle.jsx';
 
 // AnimatePresence + a pathname key gives Login <-> Register (and any
@@ -17,15 +17,22 @@ export default function AuthLayout() {
   const location = useLocation();
 
   return (
-    <div className="relative flex h-screen items-center justify-center bg-canvas-light dark:bg-canvas-dark">
+    // min-h-screen + overflow-y-auto (not a fixed h-screen) — Register's
+    // fuller content (fields + strength checklist + error + Google button)
+    // could exceed viewport height on a short/landscape mobile viewport;
+    // a fixed h-screen would clip it with no way to scroll to the rest.
+    <div className="relative flex min-h-screen items-center justify-center overflow-y-auto bg-canvas-light py-10 dark:bg-canvas-dark">
       <div className="absolute right-6 top-6">
         <ThemeToggle />
       </div>
-      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-border-token-light bg-surface-light p-8 text-ink-primary-light shadow-sm dark:border-border-token-dark dark:bg-surface-dark dark:text-ink-primary-dark">
+      <motion.div
+        layout
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-border-token-light bg-surface-light p-8 text-ink-primary-light shadow-sm dark:border-border-token-dark dark:bg-surface-dark dark:text-ink-primary-dark"
+      >
         <AnimatePresence mode="wait" initial={false}>
           <Outlet key={location.pathname} />
         </AnimatePresence>
-      </div>
+      </motion.div>
     </div>
   );
 }

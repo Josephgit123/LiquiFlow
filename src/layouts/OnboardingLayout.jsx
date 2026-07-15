@@ -12,11 +12,17 @@ import ThemeToggle from '../components/common/ThemeToggle.jsx';
 // from every layout, with no exception for standalone ones.
 export default function OnboardingLayout() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas-light px-4 text-ink-primary-light dark:bg-canvas-dark dark:text-ink-primary-dark">
+    // `relative` was missing here — the ThemeToggle wrapper below is
+    // `absolute right-6 top-6` with no positioned ancestor, so it would
+    // position against the nearest positioned ancestor further up the
+    // tree (or the viewport) instead of staying pinned to this layout's
+    // corner, unlike the identical pattern in AuthLayout.jsx (which does
+    // have `relative`). Found via the Groups 1-5 audit.
+    <div className="relative flex min-h-screen items-center justify-center bg-canvas-light px-4 py-10 text-ink-primary-light dark:bg-canvas-dark dark:text-ink-primary-dark">
       <div className="absolute right-6 top-6">
         <ThemeToggle />
       </div>
-      <div className="w-full max-w-3xl rounded-2xl border border-border-token-light bg-surface-light p-8 shadow-sm dark:border-border-token-dark dark:bg-surface-dark">
+      <div className="w-full max-w-3xl rounded-2xl border border-border-token-light bg-surface-light p-6 shadow-sm sm:p-8 dark:border-border-token-dark dark:bg-surface-dark">
         <Outlet />
       </div>
     </div>

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { apiFetch } from '../../services/apiClient.js';
+import { useApiList } from '../../hooks/useApiList.js';
 import { toDate } from '../../utils/firestoreTime.js';
 import { downloadCsv } from '../../utils/exportData.js';
 import GlassCard from '../../components/common/GlassCard.jsx';
@@ -9,6 +9,8 @@ import CurrencyDisplay from '../../components/common/CurrencyDisplay.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import DetailRow from '../../components/common/DetailRow.jsx';
+import Button from '../../components/common/Button.jsx';
+import Input from '../../components/common/Input.jsx';
 
 // Merges the spec's separate "Settlement Ledger" and "Transactions" pages
 // into this one page (Group 1 navConfig reconciliation, confirmed) —
@@ -18,19 +20,30 @@ const MAX_DATE_SPAN_DAYS = 90;
 const PAGE_SIZE = 20;
 const VALID_STATUSES = ['CAPTURED', 'REFUNDED', 'DISPUTED'];
 
+// Keeps a risk-score field numerically within [0, 100] as the user types,
+// rather than only constraining it via the (non-enforcing, for typed
+// input) native min/max attributes — a typed "-5" or "150" previously
+// reached handleApplyFilters and the request untouched.
+function clampRisk(value) {
+  if (value === '') return '';
+  const n = Number(value);
+  if (Number.isNaN(n)) return value;
+  return String(Math.min(100, Math.max(0, n)));
+}
+
 function ReceiptHashCell({ hash }) {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState('idle'); // idle | copied | failed
   const truncated = hash ? `${hash.slice(0, 10)}…` : '—';
 
   async function handleCopy() {
     if (!hash) return;
     try {
       await navigator.clipboard.writeText(hash);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setCopyState('copied');
     } catch {
-      // Clipboard API unavailable in this context — a copy nicety failing
-      // silently isn't worth surfacing as an error.
+      setCopyState('failed');
+    } finally {
+      setTimeout(() => setCopyState('idle'), 1500);
     }
   }
 
@@ -38,14 +51,19 @@ function ReceiptHashCell({ hash }) {
     <div className="flex items-center gap-2">
       <span className="font-mono text-xs">{truncated}</span>
       {hash && (
-        <button type="button" onClick={handleCopy} className="text-xs text-accent-liquid hover:underline">
-          {copied ? 'Copied!' : 'Copy'}
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="rounded text-xs text-accent-liquid hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-liquid/50"
+        >
+          <span role="status" aria-live="polite">
+            {copyState === 'copied' ? 'Copied!' : copyState === 'failed' ? 'Copy failed' : 'Copy'}
+          </span>
         </button>
       )}
     </div>
   );
 }
-
 
 export default function SettlementLedger() {
   const { merchantProfile } = useAuth();
@@ -55,50 +73,34 @@ export default function SettlementLedger() {
   const [appliedFilters, setAppliedFilters] = useState(filters);
   const [filterError, setFilterError] = useState(null);
 
-  const [items, setItems] = useState([]);
   const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [inspecting, setInspecting] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams();
-        if (appliedFilters.status) params.set('status', appliedFilters.status);
-        if (appliedFilters.dateFrom) params.set('dateFrom', appliedFilters.dateFrom);
-        if (appliedFilters.dateTo) params.set('dateTo', appliedFilters.dateTo);
-        if (appliedFilters.riskMin !== '') params.set('riskMin', appliedFilters.riskMin);
-        if (appliedFilters.riskMax !== '') params.set('riskMax', appliedFilters.riskMax);
-        params.set('limit', String(PAGE_SIZE));
-        params.set('offset', String(offset));
-
-        const result = await apiFetch(`/transactions?${params.toString()}`);
-        if (!cancelled) {
-          setItems(result.items);
-          setHasMore(result.hasMore);
-        }
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load transactions.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
+  const queryPath = useMemo(() => {
+    const params = new URLSearchParams();
+    if (appliedFilters.status) params.set('status', appliedFilters.status);
+    if (appliedFilters.dateFrom) params.set('dateFrom', appliedFilters.dateFrom);
+    if (appliedFilters.dateTo) params.set('dateTo', appliedFilters.dateTo);
+    if (appliedFilters.riskMin !== '') params.set('riskMin', appliedFilters.riskMin);
+    if (appliedFilters.riskMax !== '') params.set('riskMax', appliedFilters.riskMax);
+    params.set('limit', String(PAGE_SIZE));
+    params.set('offset', String(offset));
+    return `/transactions?${params.toString()}`;
   }, [appliedFilters, offset]);
+
+  const { items, hasMore, loading, error } = useApiList(queryPath);
 
   function handleApplyFilters() {
     // 90-day max span — enforced client-side before the request goes out,
-    // not just hoping the backend rejects it gracefully (Part 3).
-    if (filters.dateFrom && filters.dateTo) {
-      const spanDays = (new Date(filters.dateTo).getTime() - new Date(filters.dateFrom).getTime()) / 86400000;
+    // not just hoping the backend rejects it gracefully (Part 3). Checked
+    // even when only ONE end of the range is set (treating the missing
+    // end as "today"), since a lone dateFrom/dateTo is otherwise an
+    // unbounded range in the other direction.
+    if (filters.dateFrom || filters.dateTo) {
+      const today = new Date();
+      const from = filters.dateFrom ? new Date(filters.dateFrom) : today;
+      const to = filters.dateTo ? new Date(filters.dateTo) : today;
+      const spanDays = (to.getTime() - from.getTime()) / 86400000;
       if (spanDays < 0) {
         setFilterError('The "From" date must be before the "To" date.');
         return;
@@ -118,6 +120,10 @@ export default function SettlementLedger() {
   }
 
   function handleExportCsv() {
+    // Exports only the currently-loaded page, matching this page's spec'd
+    // "CSV export client-side from loaded data" scope — the button is
+    // labeled accordingly (below) rather than implying a full filtered
+    // export, which would mean fetching every matching row.
     downloadCsv(
       `liquiflow-settlement-ledger-${new Date().toISOString().slice(0, 10)}.csv`,
       [
@@ -138,6 +144,7 @@ export default function SettlementLedger() {
     {
       key: 'timestamp',
       label: 'Date',
+      sortable: true,
       render: (row) => {
         const d = toDate(row.timestamp);
         return d ? d.toLocaleDateString() : '—';
@@ -152,9 +159,10 @@ export default function SettlementLedger() {
       key: 'amountGross',
       label: 'Amount',
       align: 'right',
+      sortable: true,
       render: (row) => <CurrencyDisplay value={row.amountGross} currency={currency} animate={false} />,
     },
-    { key: 'riskScoreCalculated', label: 'Risk', align: 'right' },
+    { key: 'riskScoreCalculated', label: 'Risk', align: 'right', sortable: true },
     { key: 'status', label: 'Status', render: (row) => <StatusBadge value={row.status} /> },
     { key: 'receiptHash', label: 'Receipt', render: (row) => <ReceiptHashCell hash={row.receiptHash} /> },
     {
@@ -165,7 +173,7 @@ export default function SettlementLedger() {
         <button
           type="button"
           onClick={() => setInspecting(row)}
-          className="text-xs font-medium text-accent-liquid hover:underline"
+          className="rounded text-xs font-medium text-accent-liquid hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-liquid/50"
         >
           Inspect
         </button>
@@ -182,48 +190,32 @@ export default function SettlementLedger() {
             Full transaction history — filter, inspect, and export.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleExportCsv}
-          className="rounded-lg border border-border-token-light px-4 py-2 text-sm font-medium transition hover:bg-surface-light-elevated dark:border-border-token-dark dark:hover:bg-surface-dark-elevated"
-        >
-          Export CSV
-        </button>
+        <Button variant="secondary" onClick={handleExportCsv} disabled={items.length === 0} title="Exports the currently loaded page">
+          Export Page (CSV)
+        </Button>
       </div>
 
       {/* Filter strip — one row, above the table, scoping everything below it. */}
       <GlassCard>
         <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-secondary-light dark:text-ink-secondary-dark">
-              From
-            </label>
-            <input
-              type="date"
-              value={filters.dateFrom}
-              onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
-              className="rounded-lg border border-border-token-light bg-surface-light px-3 py-1.5 text-sm dark:border-border-token-dark dark:bg-surface-dark"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-secondary-light dark:text-ink-secondary-dark">
-              To
-            </label>
-            <input
-              type="date"
-              value={filters.dateTo}
-              onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
-              className="rounded-lg border border-border-token-light bg-surface-light px-3 py-1.5 text-sm dark:border-border-token-dark dark:bg-surface-dark"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-secondary-light dark:text-ink-secondary-dark">
-              Status
-            </label>
+          <Input
+            label="From"
+            type="date"
+            value={filters.dateFrom}
+            onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
+          />
+          <Input
+            label="To"
+            type="date"
+            value={filters.dateTo}
+            onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
+          />
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium">Status</span>
             <select
               value={filters.status}
               onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-              className="rounded-lg border border-border-token-light bg-surface-light px-3 py-1.5 text-sm dark:border-border-token-dark dark:bg-surface-dark"
+              className="rounded-lg border border-border-token-light bg-surface-light px-3 py-2 text-sm outline-none focus:border-accent-liquid focus-visible:ring-2 focus-visible:ring-accent-liquid/30 dark:border-border-token-dark dark:bg-surface-dark"
             >
               <option value="">All</option>
               {VALID_STATUSES.map((s) => (
@@ -232,45 +224,39 @@ export default function SettlementLedger() {
                 </option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-secondary-light dark:text-ink-secondary-dark">
-              Risk min
-            </label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={filters.riskMin}
-              onChange={(e) => setFilters((f) => ({ ...f, riskMin: e.target.value }))}
-              className="w-20 rounded-lg border border-border-token-light bg-surface-light px-3 py-1.5 text-sm dark:border-border-token-dark dark:bg-surface-dark"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-secondary-light dark:text-ink-secondary-dark">
-              Risk max
-            </label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={filters.riskMax}
-              onChange={(e) => setFilters((f) => ({ ...f, riskMax: e.target.value }))}
-              className="w-20 rounded-lg border border-border-token-light bg-surface-light px-3 py-1.5 text-sm dark:border-border-token-dark dark:bg-surface-dark"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleApplyFilters}
-            className="rounded-lg bg-accent-liquid px-4 py-1.5 text-sm font-semibold text-white transition hover:brightness-110"
-          >
-            Apply Filters
-          </button>
+          </label>
+          <Input
+            label="Risk min"
+            type="number"
+            min="0"
+            max="100"
+            value={filters.riskMin}
+            onChange={(e) => setFilters((f) => ({ ...f, riskMin: clampRisk(e.target.value) }))}
+            className="w-20"
+          />
+          <Input
+            label="Risk max"
+            type="number"
+            min="0"
+            max="100"
+            value={filters.riskMax}
+            onChange={(e) => setFilters((f) => ({ ...f, riskMax: clampRisk(e.target.value) }))}
+            className="w-20"
+          />
+          <Button onClick={handleApplyFilters}>Apply Filters</Button>
         </div>
-        {filterError && <p className="mt-2 text-sm text-accent-alert">{filterError}</p>}
+        {filterError && (
+          <p role="alert" className="mt-2 text-sm text-accent-alert">
+            {filterError}
+          </p>
+        )}
       </GlassCard>
 
-      {error && <p className="text-sm text-accent-alert">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-accent-alert">
+          {error}
+        </p>
+      )}
 
       <DataTable
         columns={columns}

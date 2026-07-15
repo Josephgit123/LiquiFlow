@@ -10,7 +10,19 @@ import { useMotionValue, useSpring } from 'framer-motion';
 // the UI never looks broken or crashes on a negative balance.
 const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', INR: '₹' };
 
-function formatCurrency(value, currency) {
+// Exported so non-JSX contexts (e.g. a ticket description string sent to
+// the backend) can reuse the exact same formatting rather than a second
+// ad hoc `.toFixed(2)` — CoreCommandDashboard's Capital Extraction ticket
+// body previously did the latter (Groups 1-5 audit), rendering large
+// balances as "400000.00" with no thousands separator, unlike everywhere
+// else in the app.
+export function formatCurrency(value, currency) {
+  // Every real field this renders is always-present, server-computed data
+  // (settlementService.js guarantees platformFeeDeduction etc. on every
+  // write) — this guard is for the case that never should happen rather
+  // than one that does, but "$NaN" is a worse failure mode than a plain
+  // dash for a financial UI, so it's cheap insurance either way.
+  if (typeof value !== 'number' || Number.isNaN(value)) return '—';
   const symbol = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const sign = value < 0 ? '-' : '';
   // toLocaleString with fixed min/max fraction digits gives both the
@@ -33,7 +45,6 @@ function formatCurrency(value, currency) {
  */
 export default function CurrencyDisplay({ value, currency = 'USD', animate = true, className = '' }) {
   const numericValue = typeof value === 'number' ? value : Number(value);
-  const isNegative = numericValue < 0;
 
   const motionValue = useMotionValue(numericValue);
   const spring = useSpring(motionValue, { stiffness: 120, damping: 20 });
@@ -53,13 +64,21 @@ export default function CurrencyDisplay({ value, currency = 'USD', animate = tru
     return spring.on('change', (latest) => setDisplayValue(latest));
   }, [spring, animate]);
 
+  // Derived from whatever value is actually ON SCREEN, not the animation's
+  // target — using `numericValue` here instead would flip the color the
+  // instant a new (e.g. positive) target is set, while the spring is still
+  // mid-transition through negative territory, producing a color that
+  // contradicts the digits still visibly counting through zero.
+  const shownValue = animate ? displayValue : numericValue;
+  const isNegative = shownValue < 0;
+
   return (
     <span
       className={`font-medium tabular-nums ${
         isNegative ? 'text-accent-alert' : 'text-ink-primary-light dark:text-ink-primary-dark'
       } ${className}`}
     >
-      {formatCurrency(animate ? displayValue : numericValue, currency)}
+      {formatCurrency(shownValue, currency)}
     </span>
   );
 }

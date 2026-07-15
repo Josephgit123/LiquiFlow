@@ -1,14 +1,18 @@
+import { motion } from 'framer-motion';
+
 // Shared by Login and Registration — a single Google-provider popup
 // button, not two separate implementations (Master Specification Section
 // 5's "Google Authentication" is a button embedded in both cards, not a
 // distinct route).
 export default function GoogleAuthButton({ onClick, disabled, label = 'Continue with Google' }) {
   return (
-    <button
+    <motion.button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-token-light bg-surface-light px-4 py-2.5 text-sm font-medium text-ink-primary-light transition hover:bg-surface-light-elevated disabled:opacity-50 dark:border-border-token-dark dark:bg-surface-dark dark:text-ink-primary-dark dark:hover:bg-surface-dark-elevated"
+      whileHover={disabled ? undefined : { scale: 1.01 }}
+      whileTap={disabled ? undefined : { scale: 0.98 }}
+      className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-token-light bg-surface-light px-4 py-2.5 text-sm font-medium text-ink-primary-light transition hover:bg-surface-light-elevated disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-liquid/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-light dark:border-border-token-dark dark:bg-surface-dark dark:text-ink-primary-dark dark:hover:bg-surface-dark-elevated dark:focus-visible:ring-offset-surface-dark"
     >
       <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
         <path
@@ -29,6 +33,6 @@ export default function GoogleAuthButton({ onClick, disabled, label = 'Continue 
         />
       </svg>
       {label}
-    </button>
+    </motion.button>
   );
 }

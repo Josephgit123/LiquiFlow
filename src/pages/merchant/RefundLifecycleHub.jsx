@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useFirestoreDoc } from '../../hooks/useFirestoreDoc.js';
+import { useApiList } from '../../hooks/useApiList.js';
+import { useAsyncAction } from '../../hooks/useAsyncAction.js';
 import { apiFetch } from '../../services/apiClient.js';
 import { toDate } from '../../utils/firestoreTime.js';
 import GlassCard from '../../components/common/GlassCard.jsx';
@@ -8,6 +10,8 @@ import CurrencyDisplay from '../../components/common/CurrencyDisplay.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import DetailRow from '../../components/common/DetailRow.jsx';
+import Button from '../../components/common/Button.jsx';
+import Input from '../../components/common/Input.jsx';
 
 export default function RefundLifecycleHub() {
   const { firebaseUser, merchantProfile } = useAuth();
@@ -19,39 +23,19 @@ export default function RefundLifecycleHub() {
   const { data: balanceDoc } = useFirestoreDoc(merchantId ? `merchant_balances/${merchantId}` : null);
   const availableLiquid = balanceDoc?.availableLiquid ?? 0;
 
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Only CAPTURED transactions are refund-eligible (refundService.js, Step
+  // 10) — scoping the list to them here rather than showing everything and
+  // letting most rows be dead ends.
+  const { items: transactions, loading, error, reload } = useApiList('/transactions?status=CAPTURED&limit=100');
+
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(null);
   const [reason, setReason] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
-
-  async function loadTransactions() {
-    setLoading(true);
-    setError(null);
-    try {
-      // Only CAPTURED transactions are refund-eligible (refundService.js,
-      // Step 10) — scoping the list to them here rather than showing
-      // everything and letting most rows be dead ends.
-      const result = await apiFetch('/transactions?status=CAPTURED&limit=100');
-      setTransactions(result.items);
-    } catch (err) {
-      setError(err.message || 'Failed to load transactions.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadTransactions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { submitting, error: submitError, setError: setSubmitError, run } = useAsyncAction();
 
   const filtered = useMemo(() => {
     if (!search.trim()) return transactions;
@@ -87,10 +71,8 @@ export default function RefundLifecycleHub() {
 
   async function handleConfirmRefund() {
     if (!selected) return;
-    setSubmitting(true);
-    setSubmitError(null);
-    try {
-      await apiFetch('/transactions/refund', {
+    const result = await run(() =>
+      apiFetch('/transactions/refund', {
         method: 'POST',
         body: {
           transactionId: selected.transactionId,
@@ -98,15 +80,13 @@ export default function RefundLifecycleHub() {
           reason: reason || undefined,
           idempotencyKey,
         },
-      });
+      })
+    );
+    if (result) {
       setConfirmOpen(false);
       setSuccessMessage(`Refund submitted for ${selected.transactionId}.`);
       setSelectedId(null);
-      await loadTransactions();
-    } catch (err) {
-      setSubmitError(err.message || 'Something went wrong. Please try again.');
-    } finally {
-      setSubmitting(false);
+      reload();
     }
   }
 
@@ -119,14 +99,18 @@ export default function RefundLifecycleHub() {
             Search a captured transaction to initiate a refund.
           </p>
         </div>
-        <input
+        <Input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by transaction ID…"
-          className="rounded-lg border border-border-token-light bg-surface-light px-3 py-2 text-sm outline-none focus:border-accent-liquid dark:border-border-token-dark dark:bg-surface-dark"
+          aria-label="Search by transaction ID"
         />
-        {error && <p className="text-sm text-accent-alert">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-accent-alert">
+            {error}
+          </p>
+        )}
         <div className="flex max-h-[560px] flex-col gap-2 overflow-y-auto">
           {loading && <p className="text-sm text-ink-muted-light dark:text-ink-muted-dark">Loading…</p>}
           {!loading && filtered.length === 0 && (
@@ -137,7 +121,7 @@ export default function RefundLifecycleHub() {
               key={t.transactionId}
               type="button"
               onClick={() => setSelectedId(t.transactionId)}
-              className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition ${
+              className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-liquid/50 ${
                 selectedId === t.transactionId
                   ? 'border-accent-liquid bg-accent-liquid/10'
                   : 'border-border-token-light hover:bg-surface-light-elevated dark:border-border-token-dark dark:hover:bg-surface-dark-elevated'
@@ -151,7 +135,11 @@ export default function RefundLifecycleHub() {
       </div>
 
       <div>
-        {successMessage && <p className="mb-4 text-sm text-accent-liquid">{successMessage}</p>}
+        {successMessage && (
+          <p role="status" className="mb-4 text-sm text-accent-liquid">
+            {successMessage}
+          </p>
+        )}
         {!selected && (
           <GlassCard>
             <p className="py-12 text-center text-sm text-ink-muted-light dark:text-ink-muted-dark">
@@ -175,16 +163,20 @@ export default function RefundLifecycleHub() {
               />
             </div>
 
-            {!eligibility.eligible && <p className="mt-4 text-sm text-accent-alert">{eligibility.reason}</p>}
+            {!eligibility.eligible && (
+              <p role="alert" className="mt-4 text-sm text-accent-alert">
+                {eligibility.reason}
+              </p>
+            )}
 
-            <button
-              type="button"
+            <Button
+              variant="primary"
               disabled={!eligibility.eligible}
               onClick={openConfirm}
-              className="mt-6 rounded-lg bg-accent-liquid px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+              className="mt-6 w-full"
             >
               Refund This Transaction
-            </button>
+            </Button>
           </GlassCard>
         )}
       </div>
@@ -202,26 +194,21 @@ export default function RefundLifecycleHub() {
               onChange={(e) => setReason(e.target.value)}
               rows={3}
               placeholder="Reason (optional)"
-              className="w-full rounded-lg border border-border-token-light bg-surface-light px-3 py-2 text-sm outline-none focus:border-accent-liquid dark:border-border-token-dark dark:bg-surface-dark"
+              aria-label="Refund reason (optional)"
+              className="w-full rounded-lg border border-border-token-light bg-surface-light px-3 py-2 text-sm outline-none transition focus:border-accent-liquid focus-visible:ring-2 focus-visible:ring-accent-liquid/30 dark:border-border-token-dark dark:bg-surface-dark"
             />
-            {submitError && <p className="text-sm text-accent-alert">{submitError}</p>}
+            {submitError && (
+              <p role="alert" className="text-sm text-accent-alert">
+                {submitError}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmOpen(false)}
-                disabled={submitting}
-                className="rounded-lg border border-border-token-light px-4 py-2 text-sm font-medium transition hover:bg-surface-light-elevated disabled:opacity-50 dark:border-border-token-dark dark:hover:bg-surface-dark-elevated"
-              >
+              <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={submitting}>
                 Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmRefund}
-                disabled={submitting}
-                className="rounded-lg bg-accent-alert px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
-              >
-                {submitting ? 'Processing…' : 'Confirm Refund'}
-              </button>
+              </Button>
+              <Button variant="destructive" onClick={handleConfirmRefund} disabled={submitting} loading={submitting}>
+                Confirm Refund
+              </Button>
             </div>
           </div>
         )}

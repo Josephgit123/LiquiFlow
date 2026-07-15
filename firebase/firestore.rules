@@ -1,5 +1,11 @@
 rules_version = '2';
 
+// Deploy with: firebase deploy --only firestore:rules (run from this
+// firebase/ directory, or add --project <id> if firebase/.firebaserc
+// doesn't already point at the right project). Editing this file has
+// NO effect on a live project until that command runs — see
+// DEPLOYMENT_GUIDE.md's "Firestore Setup" section.
+//
 // Stricter than the master spec: denies ALL direct client writes, not
 // just to the append-only ledger collections. Every write in this app
 // goes through the Firebase Admin SDK on the backend (see
@@ -60,10 +66,32 @@ service cloud.firestore {
     match /tickets/{ticketId} {
       allow read: if isSignedIn() && resource.data.merchantId == request.auth.uid;
       allow write: if false;
+
+      // Read-only, added for Support Desk's live message thread (Group 6).
+      // No rule previously existed for this subcollection at all, which
+      // means it was default-denied — a client onSnapshot on
+      // tickets/{id}/messages would silently return nothing. get() re-reads
+      // the parent ticket rather than duplicating merchantId onto every
+      // message doc, so ownership is checked against the single source of
+      // truth.
+      match /messages/{messageId} {
+        allow read: if isSignedIn() &&
+          get(/databases/$(database)/documents/tickets/$(ticketId)).data.merchantId == request.auth.uid;
+        allow write: if false;
+      }
     }
 
     match /notifications/{notificationId} {
-      allow read: if isSignedIn() && resource.data.merchantId == request.auth.uid;
+      // Own notifications OR a targetRole-wide MERCHANT broadcast
+      // (merchantId: null, per notificationService.js). The original
+      // `resource.data.merchantId == request.auth.uid` alone evaluates to
+      // false for every broadcast (null != uid), so a merchant's live
+      // listener would silently never surface them even though the REST
+      // endpoint (via the Admin SDK, not subject to these rules) returns
+      // them correctly.
+      allow read: if isSignedIn() &&
+        (resource.data.merchantId == request.auth.uid ||
+         (resource.data.merchantId == null && resource.data.targetRole == 'MERCHANT'));
       allow write: if false;
     }
 

@@ -9,8 +9,10 @@ import { toMillis } from '../../utils/firestoreTime.js';
 import { tokens } from '../../styles/tokens.js';
 import GlassCard from '../../components/common/GlassCard.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
-import CurrencyDisplay from '../../components/common/CurrencyDisplay.jsx';
+import CurrencyDisplay, { formatCurrency } from '../../components/common/CurrencyDisplay.jsx';
 import QuickTicketDialog from '../../components/common/QuickTicketDialog.jsx';
+import Button from '../../components/common/Button.jsx';
+import Skeleton from '../../components/common/Skeleton.jsx';
 
 function formatDateKey(ms) {
   return new Date(ms).toISOString().slice(0, 10);
@@ -54,8 +56,8 @@ export default function CoreCommandDashboard() {
 
   // Live tiles via onSnapshot (Part 2: Dashboard needs real-time updates,
   // not just the one-time GET /api/merchants/me snapshot AuthContext holds).
-  const { data: merchantDoc } = useFirestoreDoc(merchantId ? `merchants/${merchantId}` : null);
-  const { data: balanceDoc } = useFirestoreDoc(merchantId ? `merchant_balances/${merchantId}` : null);
+  const { data: merchantDoc, loading: loadingMerchantDoc } = useFirestoreDoc(merchantId ? `merchants/${merchantId}` : null);
+  const { data: balanceDoc, loading: loadingBalanceDoc } = useFirestoreDoc(merchantId ? `merchant_balances/${merchantId}` : null);
 
   const [transactions, setTransactions] = useState([]);
   const [loadingChart, setLoadingChart] = useState(true);
@@ -63,6 +65,7 @@ export default function CoreCommandDashboard() {
   const [showTable, setShowTable] = useState(false);
   const [extractionOpen, setExtractionOpen] = useState(false);
   const [requestSubmitted, setRequestSubmitted] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState(null);
 
   // Trend chart data source: client-side bucketing of GET /api/transactions
   // (last 100) — confirmed acceptable at this app's demo/portfolio scale,
@@ -119,6 +122,10 @@ export default function CoreCommandDashboard() {
   const tooltipText = isDark ? tokens.text.primaryDark : tokens.text.primaryLight;
 
   const latestDay = chartData[chartData.length - 1];
+  // A single-day chart has nothing for Recharts' line to draw a segment
+  // between — with dot={false} unconditionally, one data point rendered
+  // completely invisibly (empty axes, no visible mark at all).
+  const showPointDots = chartData.length === 1;
 
   function handleExportCsv() {
     downloadCsv(
@@ -130,6 +137,12 @@ export default function CoreCommandDashboard() {
       ],
       chartData
     );
+    setExportFeedback('csv');
+    setTimeout(() => setExportFeedback(null), 2000);
+  }
+
+  function handleExportPdf() {
+    window.print();
   }
 
   return (
@@ -141,48 +154,38 @@ export default function CoreCommandDashboard() {
             Live liquid pool / reserve vault overview and recent transaction activity.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setExtractionOpen(true)}
-            className="rounded-lg border border-border-token-light px-4 py-2 text-sm font-medium transition hover:bg-surface-light-elevated dark:border-border-token-dark dark:hover:bg-surface-dark-elevated"
-          >
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={() => setExtractionOpen(true)}>
             Capital Extraction
-          </button>
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="rounded-lg border border-border-token-light px-4 py-2 text-sm font-medium transition hover:bg-surface-light-elevated dark:border-border-token-dark dark:hover:bg-surface-dark-elevated"
-          >
-            Export CSV
-          </button>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="rounded-lg border border-border-token-light px-4 py-2 text-sm font-medium transition hover:bg-surface-light-elevated dark:border-border-token-dark dark:hover:bg-surface-dark-elevated"
-          >
+          </Button>
+          <Button variant="secondary" onClick={handleExportCsv}>
+            {exportFeedback === 'csv' ? 'Exported ✓' : 'Export CSV'}
+          </Button>
+          <Button variant="secondary" onClick={handleExportPdf}>
             Export PDF
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <GlassCard tint="liquid">
+        <GlassCard tint="liquid" delay={0}>
           <p className="text-xs text-ink-muted-light dark:text-ink-muted-dark">Available liquid</p>
-          <div className="mt-2 text-lg font-semibold">
-            <CurrencyDisplay value={availableLiquid} currency={currency} />
+          <div className="mt-2 text-lg font-semibold" aria-live="polite">
+            {loadingBalanceDoc ? <Skeleton width="6rem" height="1.5rem" /> : <CurrencyDisplay value={availableLiquid} currency={currency} />}
           </div>
         </GlassCard>
-        <GlassCard tint="reserve">
+        <GlassCard tint="reserve" delay={0.05}>
           <p className="text-xs text-ink-muted-light dark:text-ink-muted-dark">Locked in reserve</p>
-          <div className="mt-2 text-lg font-semibold">
-            <CurrencyDisplay value={lockedEscrow} currency={currency} />
+          <div className="mt-2 text-lg font-semibold" aria-live="polite">
+            {loadingBalanceDoc ? <Skeleton width="6rem" height="1.5rem" /> : <CurrencyDisplay value={lockedEscrow} currency={currency} />}
           </div>
         </GlassCard>
-        <GlassCard>
+        <GlassCard delay={0.1}>
           <p className="text-xs text-ink-muted-light dark:text-ink-muted-dark">Risk tier</p>
           <div className="mt-2 flex items-center gap-2">
-            {effectiveTier ? (
+            {loadingMerchantDoc ? (
+              <Skeleton width="4rem" height="1.25rem" variant="rect" />
+            ) : effectiveTier ? (
               <StatusBadge value={effectiveTier} />
             ) : (
               <span className="text-sm text-ink-muted-light dark:text-ink-muted-dark">—</span>
@@ -190,10 +193,12 @@ export default function CoreCommandDashboard() {
             {isOverridden && <span className="text-xs text-accent-reserve">(admin override)</span>}
           </div>
         </GlassCard>
-        <GlassCard>
+        <GlassCard delay={0.15}>
           <p className="text-xs text-ink-muted-light dark:text-ink-muted-dark">Account status</p>
           <div className="mt-2">
-            {accountStatus ? (
+            {loadingMerchantDoc ? (
+              <Skeleton width="4rem" height="1.25rem" variant="rect" />
+            ) : accountStatus ? (
               <StatusBadge value={accountStatus} />
             ) : (
               <span className="text-sm text-ink-muted-light dark:text-ink-muted-dark">—</span>
@@ -202,7 +207,7 @@ export default function CoreCommandDashboard() {
         </GlassCard>
       </div>
 
-      <GlassCard>
+      <GlassCard delay={0.2}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold">Daily liquid / reserve trend</h2>
@@ -230,7 +235,11 @@ export default function CoreCommandDashboard() {
           )}
         </div>
 
-        {chartError && <p className="text-sm text-accent-alert">{chartError}</p>}
+        {chartError && (
+          <p role="alert" className="text-sm text-accent-alert">
+            {chartError}
+          </p>
+        )}
 
         {!chartError && !loadingChart && chartData.length === 0 && (
           <p className="py-8 text-center text-sm text-ink-muted-light dark:text-ink-muted-dark">
@@ -238,7 +247,15 @@ export default function CoreCommandDashboard() {
           </p>
         )}
 
-        {!chartError && (loadingChart || chartData.length > 0) && (
+        {!chartError && loadingChart && (
+          <div className="flex h-72 w-full items-end gap-3 px-2 pb-2">
+            {[40, 65, 50, 80, 60, 90, 70].map((h, i) => (
+              <Skeleton key={i} variant="rect" width="100%" height={`${h}%`} />
+            ))}
+          </div>
+        )}
+
+        {!chartError && !loadingChart && chartData.length > 0 && (
           <>
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -276,7 +293,7 @@ export default function CoreCommandDashboard() {
                     name="Liquid"
                     stroke={tokens.accent.liquid}
                     strokeWidth={2}
-                    dot={false}
+                    dot={showPointDots}
                     activeDot={{ r: 5 }}
                   />
                   <Line
@@ -285,7 +302,7 @@ export default function CoreCommandDashboard() {
                     name="Reserve"
                     stroke={tokens.accent.reserve}
                     strokeWidth={2}
-                    dot={false}
+                    dot={showPointDots}
                     activeDot={{ r: 5 }}
                   />
                 </LineChart>
@@ -295,7 +312,7 @@ export default function CoreCommandDashboard() {
             <button
               type="button"
               onClick={() => setShowTable((v) => !v)}
-              className="mt-3 text-xs font-medium text-accent-liquid hover:underline print:hidden"
+              className="mt-3 rounded text-xs font-medium text-accent-liquid hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-liquid/50 print:hidden"
             >
               {showTable ? 'Hide table view' : 'View as table'}
             </button>
@@ -334,11 +351,11 @@ export default function CoreCommandDashboard() {
         open={extractionOpen}
         onClose={() => setExtractionOpen(false)}
         subject="Capital Extraction Request"
-        defaultDescription={`Requesting a payout of available liquid funds (currently ${currency} ${availableLiquid.toFixed(2)}). Please review and process via the Settlement Engine.`}
+        defaultDescription={`Requesting a payout of available liquid funds (currently ${formatCurrency(availableLiquid, currency)}). Please review and process via the Settlement Engine.`}
         onSubmitted={() => setRequestSubmitted(true)}
       />
       {requestSubmitted && (
-        <p className="text-sm text-accent-liquid print:hidden">
+        <p role="status" className="text-sm text-accent-liquid print:hidden">
           Your capital extraction request has been submitted as a support ticket.
         </p>
       )}

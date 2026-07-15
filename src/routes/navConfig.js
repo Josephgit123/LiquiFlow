@@ -21,13 +21,20 @@
 //     Analytics (admin) were ADDED — they had real backend support
 //     (Steps 14-15) but no nav entry at all.
 
-// `layout` picks which shell wraps the page: 'public' (PublicLayout) or
-// 'auth' (AuthLayout, the centered card used for sign-in/sign-up forms).
+// `layout` picks which shell wraps the page: 'public' (PublicLayout),
+// 'auth' (AuthLayout, the centered glass card used for merchant sign-in/
+// sign-up), or 'admin-auth' (AdminAuthLayout — deliberately NOT the same
+// shell: Master Specification Section 5 calls for the admin login to read
+// as "clearly distinct from merchant entry designs," e.g. deeper charcoal,
+// no glassmorphism warmth — reusing AuthLayout's translucent card would
+// blur that line the spec explicitly wants kept, so admin login got its
+// own layout (Group 7) instead of a shared one with a conditional prop).
 export const PUBLIC_ROUTES = [
   { id: 'LandingPage', path: '/', label: 'Home', icon: 'home', layout: 'public' },
+  { id: 'GetStarted', path: '/get-started', label: 'Get Started', icon: 'compass', layout: 'public' },
   { id: 'MerchantLogin', path: '/login', label: 'Merchant Login', icon: 'login', layout: 'auth' },
   { id: 'MerchantRegister', path: '/register', label: 'Merchant Register', icon: 'user-plus', layout: 'auth' },
-  { id: 'AdminLogin', path: '/admin/login', label: 'Admin Login', icon: 'shield', layout: 'auth' },
+  { id: 'AdminLogin', path: '/admin/login', label: 'Admin Login', icon: 'shield', layout: 'admin-auth' },
   { id: 'NotFound', path: '*', label: 'Not Found', icon: 'alert', layout: 'public' },
 ];
 

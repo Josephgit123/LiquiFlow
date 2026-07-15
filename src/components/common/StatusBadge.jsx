@@ -5,10 +5,16 @@ import { statusColor } from '../../styles/tokens.js';
 // statusColor in tokens.js, never a per-page ad hoc badge. Unknown values
 // render as neutral rather than throwing, since this badge is often fed
 // directly from API response fields.
+//
+// Text color splits per theme: the raw accent-500 anchor (`text-accent-*`)
+// validates at only ~2.1-3.1:1 against this chip's light tint in LIGHT
+// mode — failing WCAG AA — so light mode uses the darker 700-weight
+// `accent-onlight-*` shade instead; dark mode keeps the original anchor,
+// which already passes against the dark-tinted chip background.
 const VARIANT_CLASSES = {
-  liquid: 'bg-accent-liquid/15 text-accent-liquid ring-1 ring-inset ring-accent-liquid/30',
-  reserve: 'bg-accent-reserve/15 text-accent-reserve ring-1 ring-inset ring-accent-reserve/30',
-  alert: 'bg-accent-alert/15 text-accent-alert ring-1 ring-inset ring-accent-alert/30',
+  liquid: 'bg-accent-liquid/15 text-accent-onlight-liquid ring-1 ring-inset ring-accent-liquid/30 dark:text-accent-liquid',
+  reserve: 'bg-accent-reserve/15 text-accent-onlight-reserve ring-1 ring-inset ring-accent-reserve/30 dark:text-accent-reserve',
+  alert: 'bg-accent-alert/15 text-accent-onlight-alert ring-1 ring-inset ring-accent-alert/30 dark:text-accent-alert',
   neutral: 'bg-black/5 text-ink-secondary-light ring-1 ring-inset ring-black/10 dark:bg-white/5 dark:text-ink-secondary-dark dark:ring-white/10',
 };
 

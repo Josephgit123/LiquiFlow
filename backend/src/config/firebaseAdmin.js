@@ -14,4 +14,9 @@ if (!admin.apps.length) {
 
 export const db = admin.firestore();
 export const auth = admin.auth();
+// Same project's default bucket (matches VITE_FIREBASE_STORAGE_BUCKET on
+// the client) — used only for merchant/admin profile photo uploads via the
+// Admin SDK; the client never writes to Storage directly (storage.rules
+// denies all client read/write, mirroring firestore.rules' write posture).
+export const bucket = admin.storage().bucket();
 export default admin;

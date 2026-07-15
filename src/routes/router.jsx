@@ -3,11 +3,13 @@ import { PUBLIC_ROUTES, MERCHANT_STANDALONE_ROUTES, MERCHANT_NAV, ADMIN_NAV } fr
 
 import PublicLayout from '../layouts/PublicLayout.jsx';
 import AuthLayout from '../layouts/AuthLayout.jsx';
+import AdminAuthLayout from '../layouts/AdminAuthLayout.jsx';
 import OnboardingLayout from '../layouts/OnboardingLayout.jsx';
 import MerchantLayout from '../layouts/MerchantLayout.jsx';
 import AdminLayout from '../layouts/AdminLayout.jsx';
 
 import LandingPage from '../pages/public/LandingPage.jsx';
+import GetStarted from '../pages/public/GetStarted.jsx';
 import MerchantLogin from '../pages/public/MerchantLogin.jsx';
 import MerchantRegister from '../pages/public/MerchantRegister.jsx';
 import AdminLogin from '../pages/public/AdminLogin.jsx';
@@ -45,6 +47,7 @@ import PlatformSettings from '../pages/admin/PlatformSettings.jsx';
 // must have an entry here; router.jsx is the only file that imports pages.
 const PUBLIC_PAGES = {
   LandingPage,
+  GetStarted,
   MerchantLogin,
   MerchantRegister,
   AdminLogin,
@@ -88,6 +91,7 @@ const ADMIN_PAGES = {
 export default function Router() {
   const publicRoutes = PUBLIC_ROUTES.filter((r) => r.layout === 'public');
   const authRoutes = PUBLIC_ROUTES.filter((r) => r.layout === 'auth');
+  const adminAuthRoutes = PUBLIC_ROUTES.filter((r) => r.layout === 'admin-auth');
 
   return (
     <Routes>
@@ -100,6 +104,13 @@ export default function Router() {
 
       <Route element={<AuthLayout />}>
         {authRoutes.map((route) => {
+          const Page = PUBLIC_PAGES[route.id];
+          return <Route key={route.id} path={route.path} element={<Page />} />;
+        })}
+      </Route>
+
+      <Route element={<AdminAuthLayout />}>
+        {adminAuthRoutes.map((route) => {
           const Page = PUBLIC_PAGES[route.id];
           return <Route key={route.id} path={route.path} element={<Page />} />;
         })}
